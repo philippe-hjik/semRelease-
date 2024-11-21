@@ -1,17 +1,89 @@
-name: Docker Build and Push
+name: SemRelease Workflow
 
 on:
   push:
     branches:
-      - main
-  workflow_dispatch:
+      - main  # Exécution du workflow lors de chaque push sur la branche main
 
 jobs:
-  build_and_push_backend:
+  semrelease:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
+      # 1. Checkout code
+      - name: Checkout Code
+        uses: actions/checkout@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          token: ${{ secrets.GITHUB_TOKEN }}  # Utilisation du token d'accès personnel (PAT)
+
+      # 2. Setup Git
+      - name: Set up Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      # 3. Get last tag
+      - name: Get Last Tag
+        id: get_last_tag
+        run: |
+          git fetch --tags
+          LAST_TAG=$(git describe --tags $(git rev-list --tags --max-count=1) 2>/dev/null || echo "v0.0.0")
+          echo "LAST_TAG=$LAST_TAG" >> $GITHUB_ENV  # Enregistrement de la variable d'environnement
+
+      # 4. Analyze commit message
+      - name: Analyze Commit Message
+        id: analyze_commit
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%B)
+          echo "COMMIT_MSG=$COMMIT_MSG" >> $GITHUB_ENV
+          
+          if [[ "$COMMIT_MSG" == *"fix"* ]]; then
+            echo "change_type=patch" >> $GITHUB_ENV
+          elif [[ "$COMMIT_MSG" == *"feat"* ]]; then
+            echo "change_type=minor" >> $GITHUB_ENV
+          elif [[ "$COMMIT_MSG" == *"breakingChange"* ]]; then
+            echo "change_type=major" >> $GITHUB_ENV
+          else
+            echo "change_type=no_change" >> $GITHUB_ENV
+          fi
+
+      # 5. Determine new version
+      - name: Determine New Version
+        id: determine_version
+        run: |
+          VERSION_CLEANED=${LAST_TAG:1}  # Supprime le 'v' du tag
+          MAJOR=$(echo "$VERSION_CLEANED" | cut -d '.' -f 1)
+          MINOR=$(echo "$VERSION_CLEANED" | cut -d '.' -f 2)
+          PATCH=$(echo "$VERSION_CLEANED" | cut -d '.' -f 3)
+
+          if [[ "$change_type" == "major" ]]; then
+            MAJOR=$((MAJOR + 1))
+            MINOR=0
+            PATCH=0
+          elif [[ "$change_type" == "minor" ]]; then
+            MINOR=$((MINOR + 1))
+            PATCH=0
+          elif [[ "$change_type" == "patch" ]]; then
+            PATCH=$((PATCH + 1))
+          else
+            echo "No version change needed"
+            exit 0
+          fi
+
+          NEW_VERSION="v$MAJOR.$MINOR.$PATCH"
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_ENV
+
+      # 6. Create new tag
+      - name: Create New Tag
+        if: env.NEW_VERSION != ''
+        run: |
+          git tag $NEW_VERSION
+          git push origin $NEW_VERSION
+
+      # 7. Show new version
+      - name: Show New Version
+        run: |
+          if [[ "$NEW_VERSION" != "" ]]; then
+            echo "New version: $NEW_VERSION"
+          else
+            echo "This commit did not lead to a new tag."
