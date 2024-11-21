@@ -14,7 +14,7 @@ jobs:
       - name: Checkout Code
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}  # Utilisation du token d'accès personnel (PAT)
+          token: ${{ secrets.PAT }}  # Utilisation du token d'accès personnel (PAT)
 
       # 2. Setup Git
       - name: Set up Git
