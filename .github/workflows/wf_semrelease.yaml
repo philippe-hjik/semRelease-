@@ -87,3 +87,4 @@ jobs:
             echo "New version: $NEW_VERSION"
           else
             echo "This commit did not lead to a new tag."
+          fi
